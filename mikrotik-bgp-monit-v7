@@ -1,3 +1,9 @@
+# IMPORTANT! It will only work on RouterOS version 7.x
+# I adapted this script from another one that runs os RouterOS version 6 created by Cha0s (original script here https://forum.mikrotik.com/viewtopic.php?t=64572)
+
+# Adapted by Eduardo Hartmann (https://github.com/EdHart85)
+
+
 # EDIT HERE
 :local arrEmails [:toarray "user1@exemple.com, user2@exemple.com"];
 # EDIT END
