@@ -1,0 +1,144 @@
+# MIKROTIK ROUTEROS FIREWALL SCRIPT FOR EDGE ROUTERS (BGP) - IPv4
+
+# Adapted by Eduardo Hartmann (https://github.com/EdHart85) from the AMAZING work done by Daryll Swer at https://www.daryllswer.com/edge-router-bng-optimisation-guide-for-isps/
+# I strongly advise you to read Daryll's material as he constantly updates it. Also, it has a lot more than firewall configuration tips that migth be very useful in many scenarios.
+# Tested only on RouterOS version 7.x.
+
+# To better understand this script, please consider the following:
+# 192.0.2.0/24 - Fictional network owned by this AS
+# PEER-1 - Network interface with BGP peer 1 - IP address: 203.0.113.1/24
+# PEER-2 - Network interface with BGP peer 2 - IP address: 233.252.0.1/24
+# LAN-1 - LAN network interface 1 - IP address: 192.0.2.1/25
+# LAN-2 - LAN network interface 2 - IP address: 192.0.2.129/25
+# Peer 1 IP address: 203.0.113.2
+# Peer 2 IP address: 233.252.0.2
+# Network administrator IP address: 192.0.2.2
+# lan_subnets: List of subnets owned by this AS
+# not_in_internet: List of subnets that should not be seen on Internet and, therefore, must be discarded
+# bad_ipv4: List of others reserver subnets that should not be seen on Internet and, therefore, must also be discarded
+# whitelist: List of host/subnets that the router will be allowed to communicate with (BGP peers, DNS servers, etc)
+# router_addresses: List of all router's addresses, including both internal and external interfaces
+
+
+# We will use the RAW firewall table, which consumes very little CPU. That means no NAT, no packet marking and other fancy features but we won't need them on the edge router.
+# More importantly, it means NO CONNECTION TRACKING. Thus, this router will have a stateless firewall which translates into less CPU usage, faster network routing and robustness against DOS attacks.
+/ip firewall connection tracking set enabled=no
+
+# Create two interface lists, LAN and WAN, so it will be easier to set up firewall rules
+/interface list add comment="Interfaces with other ISP's or IXP's" name=WAN
+/interface list add comment="Local interfaces" name=LAN
+/interface list member add interface=PEER-1 list=WAN
+/interface list member add interface=PEER-2 list=WAN
+/interface list member add interface=LAN-1 list=LAN
+/interface list member add interface=LAN-2 list=LAN
+
+# List of subnets owned by this AS
+/ip firewall address-list
+add address=192.0.2.0/24 comment="My LAN subnets" list=lan_subnets
+
+# List of subnets that should not be seen on Internet and, therefore, must be discarded
+add address=0.0.0.0/8 comment=RFC6890 list=not_in_internet
+add address=172.16.0.0/12 comment=RFC6890 list=not_in_internet
+add address=192.168.0.0/16 comment=RFC6890 list=not_in_internet
+add address=10.0.0.0/8 comment=RFC6890 list=not_in_internet
+add address=169.254.0.0/16 comment=RFC6890 list=not_in_internet
+add address=127.0.0.0/8 comment=RFC6890 list=not_in_internet
+add address=224.0.0.0/4 comment=Multicast list=not_in_internet
+add address=198.18.0.0/15 comment=RFC6890 list=not_in_internet
+add address=192.0.0.0/24 comment=RFC6890 list=not_in_internet
+add address=192.0.2.0/24 comment=RFC6890 list=not_in_internet
+add address=198.51.100.0/24 comment=RFC6890 list=not_in_internet
+add address=203.0.113.0/24 comment=RFC6890 list=not_in_internet
+add address=100.64.0.0/10 comment=RFC6890 list=not_in_internet
+add address=240.0.0.0/4 comment=RFC6890 list=not_in_internet
+add address=192.88.99.0/24 comment="6to4 relay Anycast [RFC 3068]" list=not_in_internet
+add address=255.255.255.255 comment=RFC6890 list=not_in_internet
+
+# List of others reserver subnets that should not be seen on Internet and, therefore, must also be discarded
+add address=127.0.0.0/8 comment="RAW Filtering - RFC6890" list=bad_ipv4
+add address=192.0.0.0/24 comment="RAW Filtering - RFC6890" list=bad_ipv4
+add address=192.0.2.0/24 comment="RAW Filtering - RFC6890 documentation" list=bad_ipv4
+add address=198.51.100.0/24 comment="RAW Filtering - RFC6890 documentation" list=bad_ipv4
+add address=203.0.113.0/24 comment="RAW Filtering - RFC6890 documentation" list=bad_ipv4
+add address=240.0.0.0/4 comment="RAW Filtering - RFC6890 reserved" list=bad_ipv4
+add address=224.0.0.0/4 comment="RAW Filtering - multicast" list=bad_src_ipv4
+add address=255.255.255.255 comment="RAW Filtering - RFC6890" list=bad_src_ipv4
+add address=0.0.0.0/8 comment="RAW Filtering - RFC6890" list=bad_dst_ipv4
+add address=224.0.0.0/4 comment="RAW Filtering - multicast" list=bad_dst_ipv4
+
+# List of host/subnets that the router will be allowed to communicate with (BGP peers, DNS servers, etc)
+add address=1.1.1.1 comment="WHITELIST - DNS" list=whitelist
+add address=8.8.8.8 comment="WHITELIST - DNS" list=whitelist
+add address=200.160.7.197 comment="WHITELIST - NTP" list=whitelist
+add address=201.49.148.135 comment="WHITELIST - NTP" list=whitelist
+add address=159.148.0.0/16 comment="WHITELIST - RouterOS Updates" list=whitelist
+
+# IPv4 addresses assigned to the router
+add address=192.0.2.1   comment="IP's assigned to this router - LAN interface" list=router_addresses
+add address=192.0.2.129 comment="IP's assigned to this router - LAN interface" list=router_addresses
+add address=203.0.113.1 comment="Interface facing BGP peer 1" list=router_addresses
+add address=233.252.0.1 comment="Interface facing BGP peer 2" list=router_addresses
+
+# Subnets owned by this AS
+add address=192.0.2.0/24 comment="Our networks" list=bgp-networks-v4
+
+# List of host/subnets from LAN that are allowed to manage this router
+add address=192.0.2.2 comment="Allowed IP for remote management" list=management
+
+# The firewall itself
+/ip firewall raw
+add action=accept chain=prerouting comment="Enable this rule for transparent mode. Equals to ACCEPT ALL! BE CAREFUL!" disabled=yes
+add action=accept chain=prerouting comment="defconf: allow ping" dst-address-list=router_addresses icmp-options=8:0-255 protocol=icmp
+add action=accept chain=prerouting comment="defconf: whitelisting of some IP's (DNS, NTP, etc) so this router can communicate with them" dst-address-list=router_addresses log-prefix="WHITELIST: "    src-address-list=whitelist
+add action=accept chain=prerouting comment="BGP Peer 1" dst-address=203.0.113.2 in-interface=PEER-1 port=179 protocol=tcp src-address=203.0.113.1
+add action=accept chain=prerouting comment="BGP Peer 2" dst-address=233.252.0.2 in-interface=PEER-2 port=179 protocol=tcp src-address=233.252.0.1
+add action=drop chain=prerouting comment="defconf: deny everything else destinated to this router, except management from trusted IP's" dst-address-list=router_addresses log-prefix="MGMT-DROP: "   src-address-list=!management
+add action=drop chain=prerouting comment="defconf: Drop DHCP discover on LAN" disabled=yes dst-address=255.255.255.255 dst-port=67 in-interface-list=LAN protocol=udp src-address=0.0.0.0 src-port=68
+add action=drop chain=prerouting comment="defconf: drop bad src IPs" src-address-list=bad_ipv4
+add action=drop chain=prerouting comment="defconf: drop bad dst IPs" dst-address-list=bad_ipv4
+add action=drop chain=prerouting comment="defconf: drop bad src IPs" src-address-list=bad_src_ipv4
+add action=drop chain=prerouting comment="defconf: drop bad dst IPs" dst-address-list=bad_dst_ipv4 log-prefix="BAD-DST-V4: "
+add action=drop chain=prerouting comment="defconf: drop non global from WAN" in-interface-list=WAN log-prefix="NOT-INTERNET: " src-address-list=not_in_internet
+add action=drop chain=prerouting comment="defconf: drop forward to private ranges from WAN" dst-address-list=not_in_internet in-interface-list=WAN
+add action=drop chain=prerouting comment="defconf: drop local if not from default IP range" in-interface-list=LAN log-prefix="NONLOCAL: " src-address-list=!lan_subnets
+add action=drop chain=prerouting comment="defconf: drop bad UDP" port=0 protocol=udp
+add action=jump chain=prerouting comment="defconf: jump to TCP chain" jump-target=bad_tcp log-prefix="BADTCP: " protocol=tcp
+add action=accept chain=prerouting comment="defconf: accept everything else from LAN" in-interface-list=LAN log-prefix="ACCEPT: "
+add action=accept chain=prerouting comment="defconf: accept everything else from WAN" in-interface-list=WAN
+add action=drop chain=prerouting comment="defconf: drop the rest" log=yes log-prefix="DROP: "
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=!fin,!syn,!rst,!ack
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=fin,syn
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=fin,rst
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=fin,!ack
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=fin,urg
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=syn,rst
+add action=drop chain=bad_tcp comment="defconf: TCP flag filter" protocol=tcp tcp-flags=rst,urg
+add action=drop chain=bad_tcp comment="defconf: TCP port 0 drop" port=0 protocol=tcp
+
+# Disable services that won't be needed
+/ip firewall service-port
+set ftp disabled=yes
+set tftp disabled=yes
+set irc disabled=yes
+set h323 disabled=yes
+set sip disabled=yes
+set pptp disabled=yes
+
+# In addition to the protection granted by the firewall rules, it is recommended to blackhole unwanted routes that should not be seen on the Internet. Furthermore, it is mandatory on RouterOS v7 to either route to blackhole or have the prefix assigned to an interface. This will also reduce CPU usage whenever downstream routers/users/switches go offline and incomplete traffic from remote hosts/networks keeps trying to establish a connection and since it gets routed to blackhole it will immediately timeout and save resources.
+/ip route
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=0.0.0.0/8
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=172.16.0.0/12
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=192.168.0.0/16
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=10.0.0.0/8
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=169.254.0.0/16
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=127.0.0.0/8
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=224.0.0.0/4
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=198.18.0.0/15
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=192.0.0.0/24
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=192.0.2.0/24
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=198.51.100.0/24
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=203.0.113.0/24
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=100.64.0.0/10
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=240.0.0.0/4
+add blackhole comment="Blackhole route for RFC6890 (aggregated)" disabled=no dst-address=192.88.99.0/24
+add blackhole comment="Blackhole local route -  It is mandatory on RouterOS v7 to either route to blackhole or have the prefix assigned to an interface. This will also reduce CPU usage whenever downstream routers/users/switches go offline and incomplete traffic from remote hosts/networks keeps trying to establish a connection and since it gets routed to blackhole it will immediately timeout and save resources." disabled=no distance=1 dst-address=192.0.2.0/24 gateway="" pref-src="" routing-table=main scope=30 suppress-hw-offload=no target-scope=10
