@@ -2,4 +2,4 @@ Work in progress...
 
 
 
-![Visitor Count](https://profile-counter.glitch.me/EdHart85/count.svg)
+![](https://visitor-badge.laobi.icu/badge?page_id=EdHart85.mikrotik-routeros-scripts)
