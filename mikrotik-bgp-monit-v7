@@ -3,9 +3,9 @@
 
 # Adapted by Eduardo Hartmann (https://github.com/EdHart85)
 
-
 # EDIT HERE
 :local arrEmails [:toarray "user1@exemple.com, user2@exemple.com"];
+:local debug false;
 # EDIT END
 
 # Define Variables
@@ -25,13 +25,9 @@
 :local connX;
 :local arrPos;
 
-
-
-:log info ("=============BGP PEER STATUS DETECTION STARTED=============" );
-
-# Initialize global array
+# Initialize global array - kinda lame way to do it :P
 :if ( [:len $arrBgpState] =0 ) do={
-   :set $arrBgpState {"false"="false"};
+	:set $arrBgpState {"false"="false"};
 }
 
 # Fill arrBgpPeers array with peers name
@@ -43,113 +39,124 @@
 
 # Loop through the peers array
 :for arrPos from=0 to=([:len $arrBgpPeers]-1) do={
+	# Set peerX to current peer name for this iteration
+	:set peerX [:pick $arrBgpPeers $arrPos];
+   
+	# Set connX to current peer name for this iteration
+	:set connX ($peerX . "-1");
 
-   # Set peerX to current peer name for this iteration
-   :set peerX [:pick $arrBgpPeers $arrPos];
+	if (debug=true) do={:log info ("BGP MONIT DEBUG: Running checks on peer ".$peerX)};
    
-   # Set connX to current peer name for this iteration
-   :set connX ($peerX . "-1");
-   
-   # Check if peer is enabled and proceed
-   :if ([/routing/bgp/connection/get $peerX disabled] != true) do={
-      
-      # Get peer connection Status
-      :set connStatusX [/routing/bgp/session/get $connX established];
+	# Check if peer is enabled and proceed
+	:if ([/routing/bgp/connection/get $peerX disabled] = false) do={
+		# Debug Log
+		if (debug=true) do={:log info ("BGP MONIT DEBUG: ".$peerX." is enabled.")};
+	
+		# Initialize connStatusX
+		:set connStatusX true;
+		  
+		# Get peer connection status, if it returns an error then the peer is down
+		:do {/routing/bgp/session/get $connX established;} on-error={:set connStatusX false}
 	  
-	  # Find peer key in global array
-      :foreach k,v in=$arrBgpState do={
-         if ($k != "false") do={
-            :if ($gotKey = false) do={
-               :if ($k = $peerX) do={
-                  :set gotKey true;
-               }
-            }
-         }
-      }
-      
-      # Initialize arrBgpState array element with peerX name if it doesn't already exist
-      :if ($gotKey = false) do={
-         :set ($arrBgpState->"$peerX") "up";
-      }
-      
-      # Reset this for the next iteration
-      :set gotKey false;
-      
-      # Previous run peer status
-      :set prevStatusX ($arrBgpState->"$peerX");
-      
-      # Prepare Email body
-      :set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: " . $connStatusX . "\nBGP Peer Name: " . $peerX . "\n");
-      
-      # Check if BGP Peer is not established
-      :if ($connStatusX != true) do={
-          # Check if this is the first time the peer is down
-          :if ( $prevStatusX  = "up" ) do={
-            # Set value to 'down' to peer global var key
-            :set ($arrBgpState->$peerX) "down";
-
-            # Informational Log
-            :log error ("BGP Peer ". $peerX ." state is DOWN. Sending email alerts!" );
-
-            # Prepare Email subject
-            :set mailSubjectX ("BGP Peer ". $peerX ." on ". $hostNameX . " is DOWN!");
-            
-            # Loop over emails array to send emails to all recipients in array
-            :local arrPos2
-            :for arrPos2 from=0 to=([:len $arrEmails]-1) do={
-               # Set mailToX to recipient for this iteration
-               :set mailToX [:pick $arrEmails $arrPos2];
-               
-               # Informational Log
-               :log error ("BGP Peer " . $peerX . " status is DOWN! Sending Email alert to " . $mailToX . "." );
-                
-			   # Prepare Email body
-			   :set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: DOWN \nBGP Peer Name: " . $peerX . "\n");
-               
-			   # Send Email
-               /tool/e-mail/send to=$mailToX subject=$mailSubjectX body=$mailBodyX;
-            }        
-
-         } else={
-            # Peer down. Already sent notification so do nothing.
-               :log info ("BGP Peer ". $peerX ." is already DOWN. Ignoring!")
-         }
-
-      } else={
-
-         # Check if peer just came back up and send informational email
-         if ($prevStatusX = "down") do={
-            
-            # Prepare Email subject
-            :set mailSubjectX ("BGP Peer ". $peerX ." on ". $hostNameX . " has RECOVERED!");
-                     
-            # Loop over emails array to send emails to all recipients in array
-            :local arrPos2;
-            :for arrPos2 from=0 to=([:len $arrEmails]-1) do={
-               # Set mailToX to recepient for this iteration
-               :set mailToX [:pick $arrEmails $arrPos2];
-               
-               # Informational Log
-               :log warning ("BGP Peer " . $peerX . " status has RECOVERED! Sending informational Email to " . $mailToX . "." );
-                     
-			   # Prepare Email body
-			   :set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: UP \nBGP Peer Name: " . $peerX . "\n");
-               
-			   # Send Email
-               /tool/e-mail/send to=$mailToX subject=$mailSubjectX body=$mailBodyX;
-            }            
-            
-         }
-         
-        :log info ("BGP Peer " . $peerX . " is UP. Nothing to do!");
-         
-         # Set peer status to up
-         :set ($arrBgpState->$peerX) "up";
-      }      
-      
-   } else={
-         :log warning ("BGP Peer " . $peerX . " is disabled. Ignoring!");
-   }
+		# Find peer key in global array
+		:foreach k,v in=$arrBgpState do={
+		if ($k != "false") do={
+			:if ($gotKey = false) do={
+				:if ($k = $peerX) do={
+				:set gotKey true;
+					}
+				}
+			}
+		}
+		  
+		# Initialize arrBgpState array element with peerX name if it doesn't already exist
+		:if ($gotKey = false) do={
+			:set ($arrBgpState->"$peerX") "up";
+		}
+	      
+		# Reset this for the next iteration
+		:set gotKey false;
+	      
+		# Previous run peer status
+		:set prevStatusX ($arrBgpState->"$peerX");
+	      
+		# Prepare Email body
+		:set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: " . $connStatusX . "\nBGP Peer Name: " . $peerX . "\n");
+	      
+		# Check if BGP Peer is not established
+		:if ($connStatusX != true) do={
+			# Debug Log
+			if (debug=true) do={:log info ("BGP MONIT DEBUG: ".$peerX." is down.")};
+			
+			# Check if this is the first time the peer is down
+			:if ( $prevStatusX  = "up" ) do={
+				if (debug=true) do={:log info ("BGP MONIT DEBUG: ".$peerX." is down for the first time.")};
+			  
+				# Set value to 'down' to peer global var key
+				:set ($arrBgpState->$peerX) "down";
+	
+				# Debug Log
+				:log error ("BGP MONIT: BGP Peer ". $peerX ." state is DOWN. Sending email alerts!" );
+	
+				# Prepare Email subject
+				:set mailSubjectX ("BGP Peer ". $peerX ." on ". $hostNameX . " is DOWN!");
+	            
+				# Loop over emails array to send emails to all recipients in array
+				:local arrPos2
+				:for arrPos2 from=0 to=([:len $arrEmails]-1) do={
+					# Set mailToX to recipient for this iteration
+					:set mailToX [:pick $arrEmails $arrPos2];
+	               
+					# Informational Log
+					:log error ("BGP MONIT: BGP Peer " . $peerX . " status is DOWN! Sending Email alert to " . $mailToX . "." );
+		                
+					# Prepare Email body
+					:set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: DOWN \nBGP Peer Name: " . $peerX . "\n");
+		               
+					# Send Email
+					/tool/e-mail/send to=$mailToX subject=$mailSubjectX body=$mailBodyX;
+				}        
+			} else={
+				# Peer down. Already sent notification so do nothing.
+				:log info ("BGP MONIT: BGP Peer ". $peerX ." is already DOWN. Ignoring!")
+			}
+		} else={
+			# Debug Log
+			if (debug=true) do={:log info ("BGP MONIT DEBUG: ".$peerX." is up.")};
+			
+			# Check if peer just came back up and send informational email
+			if ($prevStatusX = "down") do={
+				# Debug Log
+				if (debug=true) do={:log info ("BGP MONIT DEBUG: ".$peerX." previous status was down, send mail.")};
+				
+				# Prepare Email subject
+		        	:set mailSubjectX ("BGP Peer ". $peerX ." on ". $hostNameX . " has RECOVERED!");
+		                     
+				# Loop over emails array to send emails to all recipients in array
+		        	:local arrPos2;
+		        	:for arrPos2 from=0 to=([:len $arrEmails]-1) do={
+		        		# Set mailToX to recepient for this iteration
+		        		:set mailToX [:pick $arrEmails $arrPos2];
+		               
+		        		# Informational Log
+		        		:log warning ("BGP MONIT: BGP Peer " . $peerX . " status has RECOVERED! Sending informational Email to " . $mailToX . "." );
+		                     
+					# Prepare Email body
+					:set mailBodyX ("Router Hostname: " . $hostNameX . "\nBGP Peer Status: UP \nBGP Peer Name: " . $peerX . "\n");
+		               
+					# Send Email
+		        		/tool/e-mail/send to=$mailToX subject=$mailSubjectX body=$mailBodyX;
+		            	}
+		        }
+		         
+		        # Informational Log
+			:log info ("BGP MONIT: BGP Peer " . $peerX . " is UP. Nothing to do!");
+		         
+			# Set peer status to up
+			:set ($arrBgpState->$peerX) "up";
+		}
+	} else={
+	        # Informational Log
+		:log warning ("BGP MONIT: BGP Peer " . $peerX . " is disabled. Ignoring!");
+	}
 }
-
-:log info ("=============BGP PEER STATUS DETECTION ENDED===============" );
