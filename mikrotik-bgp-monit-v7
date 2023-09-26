@@ -56,7 +56,7 @@
 		:set connStatusX true;
 		  
 		# Get peer connection status, if it returns an error then the peer is down
-		:set connStatusX [/routing/bgp/session/get $connX established];
+		:do { /routing/bgp/session/get $connX established; } on-error={:set connStatusX false};
 	  
 		# Find peer key in global array
 		:foreach k,v in=$arrBgpState do={
